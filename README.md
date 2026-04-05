@@ -16,8 +16,6 @@
 
 ## What is Dagu Workflow Engine?
 
-**The Dagu Difference:** Keep workflow orchestration separate from business logic. Define workflows declaratively, stay zero-invasive to application code, and get a more capable alternative to cron without taking on Airflow-level complexity.
-
 **Dagu is a self-contained, lightweight workflow engine for small teams.** Define workflows in simple YAML, execute them anywhere with a single binary, compose complex pipelines from reusable sub-workflows, and distribute tasks across workers. All without requiring databases, message brokers, or code changes to your existing scripts.
 
 Built for developers who want powerful workflow orchestration without the operational overhead. For a quick feel of how it works, take a look at the [examples](https://docs.dagu.sh/writing-workflows/examples).
@@ -39,9 +37,11 @@ Built for developers who want powerful workflow orchestration without the operat
 
 **Try it live:** [Live Demo](https://demo-instance.dagu.sh/) (credentials: `demouser` / `demouser`)
 
-## Why Dagu?
+## The Dagu Difference
 
-```
+Keep workflow orchestration separate from business logic. Define workflows declaratively, stay zero-invasive to application code, and get a more capable alternative to cron without taking on Airflow-level complexity.
+
+```sh
   Traditional Orchestrator           Dagu
   ┌────────────────────────┐        ┌──────────────────┐
   │  Web Server            │        │                  │
