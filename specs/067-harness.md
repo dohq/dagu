@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented.
+Partially implemented.
 
 ## Scope
 
@@ -41,15 +41,23 @@ This spec covers:
   one succeeds or the list is exhausted; a message naming both providers is
   written to the step's stderr before each retry
 
+This spec also covers the configuration and dispatch failures of
+containerized harness execution (a step-level `container:` block on a
+`harness.run` step) that are reachable without a working container daemon
+or a pulled image -- neither guaranteed in every environment this suite
+runs in, so a step's *successful* containerized execution is not itself
+covered here.
+
 This spec does not define:
 
 - the behavior of any specific built-in CLI provider (`claude`, `codex`,
   `aider`, and so on) -- none is installed in this conformance
   environment, so this spec exercises only custom `harnesses:` providers,
   which share the same invocation-building and fallback code paths
-- containerized harness execution (`step.container` with a harness
-  provider), the managed OpenCode execution path, or `type: agent` DAGs'
-  own use of a harness step as one of several actions in a decision loop
+- a containerized harness step's successful execution (the actual agent CLI
+  running inside a real container and producing output), the managed
+  OpenCode execution path's successful session, or `type: agent` DAGs' own
+  use of a harness step as one of several actions in a decision loop
   ([Spec 032: Agent DAGs](032-agent-dag.md))
 - prompt engineering, model behavior, or the semantics of any particular
   agent CLI's own flags
@@ -95,6 +103,20 @@ when the definition's `flag_style` is `single_dash`) unless
 `true` value produces the bare flag with no value (`false` is omitted
 entirely); a string, integer, or float value produces `flag value`; an
 array value repeats `flag value` once per element.
+
+### Containerized execution
+
+A step-level `container:` block runs the resolved provider's binary inside
+an image-created container, using that binary as its entrypoint.
+`dagu validate` checks the general harness configuration. The following
+container-specific restrictions are checked at runtime:
+
+- `prompt_mode: stdin` fails with `harness: containerized harness does not
+  support stdin input`.
+- `container.name` is rejected for image-mode harness steps. Running inside
+  an existing container uses `container.exec`.
+- `provider: opencode` with `managed: true` fails with `harness: managed
+  OpenCode is not supported inside containers`.
 
 ### Fallback
 
@@ -150,6 +172,14 @@ exists on disk or in `PATH` -- that is deferred to run time.
   process's own real exit code, and its own stdout/stderr are captured as
   usual -- this is a real process failure, not a wrapper-level validation
   error.
+- A containerized step (`container:` set) whose provider's `prompt_mode` is
+  `stdin`, whose `container.name` is set (image mode), or whose
+  `provider: opencode` step sets `managed: true`: each fails as described
+  above in Containerized execution, before any container daemon is
+  contacted.
+- A containerized step whose configured container daemon cannot be reached
+  (wrong socket, daemon not running): the step fails with `harness: failed
+  to initialize container client: ...`.
 
 ## Related Specs
 
