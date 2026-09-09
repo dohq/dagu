@@ -694,3 +694,123 @@ func TestNodeEvaluateStructuredOutput(t *testing.T) {
 		assert.Contains(t, err.Error(), `payload: unsupported output source "network"`)
 	})
 }
+
+// Capture-published outputs must reach the strict ${steps.<id>.outputs.<name>}
+// channel, which reads StepOutputsValue, not just the legacy output channels.
+func TestNodeCaptureOutputPublishesStrictStepOutputs(t *testing.T) {
+	t.Parallel()
+
+	schema := map[string]any{
+		"type":     "object",
+		"required": []any{"value"},
+		"properties": map[string]any{
+			"value": map[string]any{"type": "string"},
+		},
+	}
+
+	cases := []struct {
+		name   string
+		step   ir.Step
+		stdout string
+	}{
+		{
+			name:   "OutputSchema",
+			step:   ir.Step{OutputSchema: schema},
+			stdout: `{"value":"hello"}`,
+		},
+		{
+			name: "StructuredOutput",
+			step: ir.Step{StructuredOutput: map[string]ir.StepOutputEntry{
+				"value": {From: ir.StepOutputSourceStdout, Decode: ir.StepOutputDecodeJSON, Select: ".value"},
+			}},
+			stdout: `{"value":"hello"}`,
+		},
+		{
+			name: "StdoutOutputs",
+			step: ir.Step{StdoutOutputs: &ir.StepOutputsConfig{
+				Fields: map[string]ir.StepOutputEntry{
+					"value": {From: ir.StepOutputSourceStdout, Decode: ir.StepOutputDecodeJSON, Select: ".value"},
+				},
+			}},
+			stdout: `{"value":"hello"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			workDir := t.TempDir()
+			ctx := structuredOutputTestContext(t, nil, workDir)
+			node := NodeWithData(NodeData{Step: tc.step})
+			node.outputs.outputCaptured = true
+			node.outputs.outputData = tc.stdout
+
+			require.NoError(t, node.captureOutput(ctx))
+			state := node.State()
+			require.NotNil(t, state.StepOutputsValue)
+			assert.JSONEq(t, `{"value":"hello"}`, *state.StepOutputsValue)
+		})
+	}
+}
+
+// A name already published by the step's own output contract keeps its value,
+// so the contract derived at build time and the run agree on where it came from.
+func TestNodeCaptureOutputKeepsPublishedStepOutputs(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	ctx := structuredOutputTestContext(t, nil, workDir)
+	node := NodeWithData(NodeData{
+		Step: ir.Step{
+			Outputs: []ir.StepOutputDeclaration{{Name: "value"}},
+			OutputSchema: map[string]any{
+				"type":       "object",
+				"required":   []any{"value", "extra"},
+				"properties": map[string]any{"value": map[string]any{"type": "string"}, "extra": map[string]any{"type": "string"}},
+			},
+		},
+	})
+	node.setStepOutputsValue(`{"value":"from-output-file"}`)
+	node.outputs.outputCaptured = true
+	node.outputs.outputData = `{"value":"from-stdout","extra":"captured"}`
+
+	require.NoError(t, node.captureOutput(ctx))
+	state := node.State()
+	require.NotNil(t, state.StepOutputsValue)
+	assert.JSONEq(t, `{"value":"from-output-file","extra":"captured"}`, *state.StepOutputsValue)
+}
+
+// An unconstrained output schema accepts any JSON. A payload that is not an
+// object carries no addressable names, so the step still succeeds.
+func TestNodeCaptureOutputAcceptsNonObjectSchemaOutput(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	ctx := structuredOutputTestContext(t, nil, workDir)
+	node := NodeWithData(NodeData{Step: ir.Step{OutputSchema: map[string]any{}}})
+	node.outputs.outputCaptured = true
+	node.outputs.outputData = `[1,2,3]`
+
+	require.NoError(t, node.captureOutput(ctx))
+	state := node.State()
+	require.NotNil(t, state.OutputValue)
+	assert.JSONEq(t, `[1,2,3]`, *state.OutputValue)
+	assert.Nil(t, state.StepOutputsValue)
+}
+
+// A published output may be typed, so rendering the map must not drop entries
+// the way a string-only decode would.
+func TestStepOutputsValueMapRendersTypedValues(t *testing.T) {
+	t.Parallel()
+
+	value := `{"name":"api","count":3,"ready":true,"meta":{"tag":"v1"}}`
+	data := NodeData{State: NodeState{StepOutputsValue: &value}}
+
+	assert.Equal(t, map[string]string{
+		"name":  "api",
+		"count": "3",
+		"ready": "true",
+		"meta":  `{"tag":"v1"}`,
+	}, data.StepOutputsValueMap())
+}

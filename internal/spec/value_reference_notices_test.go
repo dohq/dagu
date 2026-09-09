@@ -293,3 +293,120 @@ steps:
 	require.NotNil(t, result.DAG)
 	assert.Empty(t, result.ValueReferenceNotices)
 }
+
+// A producer whose published names only a run reveals cannot be checked before
+// the run, so a reference to one must not be reported as an unknown name.
+func TestNoUnknownOutputNoticeForRuntimeOnlyProducers(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "stdout outputs decode whole object",
+			yaml: `
+steps:
+  - id: build
+    run: echo ok
+    stdout:
+      outputs:
+        decode: json
+  - id: deploy
+    depends: build
+    run: echo ${steps.build.outputs.image}
+`,
+		},
+		{
+			name: "output schema without inline properties",
+			yaml: `
+steps:
+  - id: build
+    run: echo ok
+    output_schema:
+      $ref: '#/$defs/result'
+      $defs:
+        result:
+          type: object
+          properties:
+            image: {type: string}
+  - id: deploy
+    depends: build
+    run: echo ${steps.build.outputs.image}
+`,
+		},
+		{
+			name: "output schema accepting extra properties",
+			yaml: `
+steps:
+  - id: build
+    run: echo ok
+    output_schema:
+      type: object
+      properties:
+        image: {type: string}
+  - id: deploy
+    depends: build
+    run: echo ${steps.build.outputs.tag}
+`,
+		},
+		{
+			name: "sub DAG child names",
+			yaml: `
+steps:
+  - id: build
+    action: dag.run
+    with: {dag: child}
+  - id: deploy
+    depends: build
+    run: echo ${steps.build.outputs.image}
+---
+name: child
+steps:
+  - id: emit
+    run: echo ok
+`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := spec.LoadYAMLWithResult(context.Background(), []byte("name: notices\n"+tc.yaml))
+			require.NoError(t, err)
+			for _, notice := range result.ValueReferenceNotices {
+				assert.NotEqual(t, cmnvalue.ValueReferenceReasonUnknownOutputName, notice.Reason,
+					"unexpected unknown output notice: %s", notice.Message)
+			}
+		})
+	}
+}
+
+// A schema that accepts only the names it lists is a complete contract, so a
+// misspelled name is still reported.
+func TestUnknownOutputNoticeForClosedOutputSchema(t *testing.T) {
+	t.Parallel()
+
+	result, err := spec.LoadYAMLWithResult(context.Background(), []byte(`
+name: notices
+steps:
+  - id: build
+    run: echo ok
+    output_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        image: {type: string}
+  - id: deploy
+    depends: build
+    run: echo ${steps.build.outputs.tag}
+`))
+	require.NoError(t, err)
+
+	var reasons []cmnvalue.ValueReferenceNoticeReason
+	for _, notice := range result.ValueReferenceNotices {
+		reasons = append(reasons, notice.Reason)
+	}
+	assert.Contains(t, reasons, cmnvalue.ValueReferenceReasonUnknownOutputName)
+}

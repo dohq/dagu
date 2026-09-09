@@ -322,6 +322,19 @@ func fixedActionOutputs(step ir.Step) []ir.StepOutputDeclaration {
 	}
 }
 
+// publishesRuntimeOnlyOutputs reports whether a step's published output names
+// come from a definition that inspection cannot read. A sub-DAG's names belong
+// to the child document, and an action's names come from a manifest resolved
+// during the run. A step that decodes its whole stdout into outputs, or whose
+// output schema carries no inline properties, reveals its names the same way.
+func publishesRuntimeOnlyOutputs(step ir.Step) bool {
+	switch step.ExecutorConfig.Type {
+	case ir.ExecutorTypeDAG, ir.ExecutorTypeSubworkflow, ir.ExecutorTypeAction:
+		return true
+	}
+	return capturedOutputs(&step).dynamic
+}
+
 func (c *stepOutputNoticeContext) report(
 	fieldPath string,
 	value string,
@@ -361,8 +374,10 @@ func (c *stepOutputNoticeContext) reason(
 	if len(ref.Path) > 0 {
 		outputName = ref.Path[0]
 	}
-	if _, ok := c.outputNames[producer.ID][outputName]; !ok {
-		return cmnvalue.ValueReferenceReasonUnknownOutputName, true
+	if !publishesRuntimeOnlyOutputs(producer) {
+		if _, ok := c.outputNames[producer.ID][outputName]; !ok {
+			return cmnvalue.ValueReferenceReasonUnknownOutputName, true
+		}
 	}
 	if !c.dependsOn(ownerStepName, producer.Name) {
 		return cmnvalue.ValueReferenceReasonMissingDependency, true

@@ -138,6 +138,11 @@ const (
 
 	StepDeclaredOutputTypeString = "string"
 	StepDeclaredOutputTypeJSON   = "json"
+
+	// StepDeclaredOutputSourceCapture marks an output published from the step's
+	// captured output. An empty source means the step writes the value to
+	// DAGU_OUTPUT_FILE.
+	StepDeclaredOutputSourceCapture = "capture"
 )
 
 // StepOutputEntry defines one structured object-form output entry.
@@ -173,6 +178,9 @@ type StepOutputDeclaration struct {
 	Name string `json:"name"`
 	Type string `json:"type,omitempty"`
 	Path string `json:"path,omitempty"`
+	// Source names the channel that publishes the value. An empty source means
+	// the step writes the value to DAGU_OUTPUT_FILE.
+	Source string `json:"source,omitempty"`
 }
 
 // StepInputDeclaration defines one named regular-file input.
@@ -199,7 +207,7 @@ func (s Step) PathOutput() (StepOutputDeclaration, bool) {
 func (s Step) ValueOutputs() []StepOutputDeclaration {
 	outputs := make([]StepOutputDeclaration, 0, len(s.Outputs))
 	for _, output := range s.Outputs {
-		if output.Path == "" {
+		if output.Path == "" && output.Source == "" {
 			outputs = append(outputs, output)
 		}
 	}
@@ -475,6 +483,9 @@ const (
 	// ExecutorTypeDAG is the executor type for a sub DAG.
 	ExecutorTypeDAG = "dag"
 
+	// ExecutorTypeSubworkflow is the legacy executor type name for a sub DAG.
+	ExecutorTypeSubworkflow = "subworkflow"
+
 	// ExecutorTypeDAGEnqueue is the executor type for asynchronously queueing a sub DAG.
 	ExecutorTypeDAGEnqueue = "dag_enqueue"
 
@@ -493,6 +504,9 @@ const (
 
 	// ExecutorTypeAction is the executor type for external Dagu actions.
 	ExecutorTypeAction = "action"
+
+	// ExecutorTypeOutputs is the executor type for publishing named outputs.
+	ExecutorTypeOutputs = "outputs"
 )
 
 // RouterConfig contains routing configuration for router-type steps.

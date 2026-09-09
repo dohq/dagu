@@ -36,7 +36,7 @@ func prepareBuildPlan(ctx context.Context, plan *Plan) error {
 		if err != nil {
 			return err
 		}
-		resolver := resolverFromEnv(env)
+		resolver := resolverFromEnv(ctx, env)
 		for idx := range step.Inputs {
 			resolved, err := resolver.String(ctx, step.Inputs[idx].Path, cmnvalue.WorkflowField(fmt.Sprintf("steps.%s.inputs.%s.path", step.Name, step.Inputs[idx].Name)))
 			if err != nil {
@@ -175,7 +175,12 @@ func validateBuildRedirectAliases(
 		redirects = append(redirects, buildRedirect{field: "stderr.artifact", path: step.StderrArtifact, artifact: true})
 	}
 
-	resolver := resolverFromEnv(env)
+	// A deferred alias may legitimately carry a reference that only resolves
+	// once the producing step has run, so it must not warn here.
+	resolver := resolverFromEnv(ctx, env)
+	if deferUnresolved {
+		resolver = resolverWithoutNotices(env)
+	}
 	for _, redirect := range redirects {
 		if redirect.path == "" {
 			continue
