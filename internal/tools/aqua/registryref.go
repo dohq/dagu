@@ -214,6 +214,10 @@ func (i *Installer) writeLatestRefCacheEntry(path string, entry latestRefCacheEn
 	if path == "" {
 		return
 	}
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		i.logger.Debug("write aqua latest registry cache", "err", fmt.Errorf("cache path is a directory: %s", path))
+		return
+	}
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
